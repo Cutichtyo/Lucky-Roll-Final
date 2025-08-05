@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Snake Game</title>
+    <style>
+        body {
+            margin: 0;
+            text-align: center;
+            background-color: #f0f8ff;
+        }
+
+        canvas {
+            background-color: #000;
+            margin-top: 30px;
+            border: 4px solid #00a86b;
+            box-shadow: 0 0 20px #00a86b;
+        }
+
+        #scoreBoard {
+            margin-top: 20px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        #controls {
+            margin-top: 15px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #00a86b;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+            button:hover {
+                background-color: #007a55;
+            }
+    </style>
+</head>
+<body>
+    <h1>🐍 Snake Game</h1>
+    <canvas id="game" width="400" height="400"></canvas>
+    <div id="scoreBoard">Điểm: 0</div>
+    <div id="controls">
+        <button onclick="togglePause()" id="pauseBtn">⏸ Pause</button>
+    </div>
+
+    <audio id="eatSound" src="https://freesound.org/data/previews/331/331912_3248244-lq.mp3"></audio>
+
+    <script>
+        const canvas = document.getElementById("game");
+        const ctx = canvas.getContext("2d");
+        const box = 20;
+        let score = 0;
+        let snakeSpeed = 150; // ms mỗi bước đi
+        let lastTime = 0;
+        let paused = false;
+
+        const snake = [{ x: 9 * box, y: 10 * box }];
+        let direction = "RIGHT";
+
+        let food = {
+            x: Math.floor(Math.random() * 19 + 1) * box,
+            y: Math.floor(Math.random() * 19 + 1) * box
+        };
+
+        const eatSound = document.getElementById("eatSound");
+
+        document.addEventListener("keydown", changeDirection);
+
+        function changeDirection(e) {
+            if (e.key === "ArrowLeft" && direction !== "RIGHT") direction = "LEFT";
+            else if (e.key === "ArrowUp" && direction !== "DOWN") direction = "UP";
+            else if (e.key === "ArrowRight" && direction !== "LEFT") direction = "RIGHT";
+            else if (e.key === "ArrowDown" && direction !== "UP") direction = "DOWN";
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw food
+            const foodImg = new Image();
+            foodImg.src = "https://cdn-icons-png.flaticon.com/512/590/590685.png";
+            ctx.drawImage(foodImg, food.x, food.y, box, box);
+
+            // Draw snake
+            for (let i = 0; i < snake.length; i++) {
+                ctx.fillStyle = i === 0 ? "lime" : "#00FF7F";
+                ctx.beginPath();
+                ctx.roundRect(snake[i].x, snake[i].y, box, box, 6);
+                ctx.fill();
+                ctx.strokeStyle = "#003300";
+                ctx.stroke();
+            }
+        }
+
+        CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+            if (w < 2 * r) r = w / 2;
+            if (h < 2 * r) r = h / 2;
+            this.beginPath();
+            this.moveTo(x + r, y);
+            this.arcTo(x + w, y, x + w, y + h, r);
+            this.arcTo(x + w, y + h, x, y + h, r);
+            this.arcTo(x, y + h, x, y, r);
+            this.arcTo(x, y, x + w, y, r);
+            this.closePath();
+            return this;
+        };
+
+        function updateSnake() {
+            let headX = snake[0].x;
+            let headY = snake[0].y;
+
+            if (direction === "LEFT") headX -= box;
+            if (direction === "RIGHT") headX += box;
+            if (direction === "UP") headY -= box;
+            if (direction === "DOWN") headY += box;
+
+            // Teleport xuyên tường
+            if (headX < 0) headX = canvas.width - box;
+            if (headX >= canvas.width) headX = 0;
+            if (headY < 0) headY = canvas.height - box;
+            if (headY >= canvas.height) headY = 0;
+
+            if (headX === food.x && headY === food.y) {
+                score++;
+                eatSound.play();
+                document.getElementById("scoreBoard").innerText = "Điểm: " + score;
+                food = {
+                    x: Math.floor(Math.random() * 19 + 1) * box,
+                    y: Math.floor(Math.random() * 19 + 1) * box
+                };
+                if (snakeSpeed > 60) snakeSpeed -= 5;
+            } else {
+                snake.pop();
+            }
+
+            const newHead = { x: headX, y: headY };
+
+            if (collision(newHead, snake)) {
+                alert("💀 Game Over! Điểm của bạn: " + score);
+                window.location.reload();
+            }
+
+            snake.unshift(newHead);
+        }
+
+        function collision(head, body) {
+            return body.some(part => head.x === part.x && head.y === part.y);
+        }
+
+        function gameLoop(currentTime) {
+            if (!paused && currentTime - lastTime >= snakeSpeed) {
+                updateSnake();
+                draw();
+                lastTime = currentTime;
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        function togglePause() {
+            paused = !paused;
+            document.getElementById("pauseBtn").innerText = paused ? "▶ Resume" : "⏸ Pause";
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

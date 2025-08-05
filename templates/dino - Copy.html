@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Dino Game</title>
+    <style>
+        /* Giữ nguyên phần style cũ */
+        body {
+            margin: 0;
+            text-align: center;
+            background-color: #f7f7f7;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        /* ... (phần CSS cũ giữ nguyên) ... */
+    </style>
+</head>
+<body>
+    <h1>🦖 Dino Game</h1>
+    <div id="score-display">Điểm: 0</div>
+    
+    <div id="game-container">
+        <canvas id="game-canvas" width="800" height="300"></canvas>
+        <div class="ground"></div>
+        <div id="game-over">
+            <h2>Game Over!</h2>
+            <p id="final-score">Điểm: 0</p>
+            <button onclick="restartGame()">Chơi lại</button>
+        </div>
+    </div>
+
+    <div id="controls">
+        <button onclick="togglePause()" id="pauseBtn">⏸ Tạm dừng</button>
+        <button onclick="restartGame()">🔄 Chơi lại</button>
+        <div id="game-settings">
+            <label for="game-speed">Tốc độ:</label>
+            <input type="range" id="game-speed" min="3" max="15" value="5" step="1">
+            <span id="speed-value">5</span>
+            
+            <label for="min-distance">Khoảng cách tối thiểu:</label>
+            <input type="range" id="min-distance" min="150" max="400" value="250" step="10">
+            <span id="distance-value">250</span>
+        </div>
+    </div>
+
+    <audio id="jumpSound" src="https://assets.mixkit.co/sfx/preview/mixkit-quick-jump-arcade-game-239.mp3"></audio>
+    <audio id="gameOverSound" src="https://assets.mixkit.co/sfx/preview/mixkit-retro-arcade-lose-2027.mp3"></audio>
+
+    <script>
+        // Cấu hình có thể tùy chỉnh
+        const config = {
+            initialSpeed: 5,
+            minObstacleDistance: 250,
+            speedIncreaseInterval: 1000,
+            requiredScoreForFlappy: 10
+        };
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score-display');
+        const gameOverDisplay = document.getElementById('game-over');
+        const finalScoreDisplay = document.getElementById('final-score');
+        const jumpSound = document.getElementById('jumpSound');
+        const gameOverSound = document.getElementById('gameOverSound');
+        const speedInput = document.getElementById('game-speed');
+        const distanceInput = document.getElementById('min-distance');
+        const speedValue = document.getElementById('speed-value');
+        const distanceValue = document.getElementById('distance-value');
+
+        // Game variables
+        let score = 0;
+        let highScore = localStorage.getItem('dinoHighScore') || 0;
+        let gameSpeed = config.initialSpeed;
+        let minObstacleDistance = config.minObstacleDistance;
+        let isGameOver = false;
+        let isPaused = false;
+        let animationId;
+        let lastTime = 0;
+        let lastObstacleTime = 0;
+        let lastScoreIncreaseTime = 0;
+
+        // Dino variables
+        const dino = {
+            x: 50,
+            y: 230,
+            width: 50,
+            height: 70,
+            isJumping: false,
+            jumpVelocity: 0,
+            gravity: 0.5,
+            jumpPower: -12,
+            groundY: 230,
+            draw() {
+                ctx.fillStyle = '#333';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                
+                // Mắt
+                ctx.fillStyle = 'white';
+                ctx.fillRect(this.x + 30, this.y + 15, 10, 10);
+                
+                // Miệng
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(this.x + 20, this.y + 35);
+                ctx.lineTo(this.x + 40, this.y + 35);
+                ctx.stroke();
+            },
+            jump() {
+                if (!this.isJumping && !isGameOver && !isPaused) {
+                    this.isJumping = true;
+                    this.jumpVelocity = this.jumpPower;
+                    jumpSound.currentTime = 0;
+                    jumpSound.play();
+                    increaseScore();
+                }
+            },
+            update() {
+                if (this.isJumping) {
+                    this.y += this.jumpVelocity;
+                    this.jumpVelocity += this.gravity;
+                    
+                    if (this.y >= this.groundY) {
+                        this.y = this.groundY;
+                        this.isJumping = false;
+                    }
+                }
+            }
+        };
+
+        // Cactus variables
+        const cacti = [];
+        const cactusTypes = [
+            { width: 30, height: 60 },
+            { width: 50, height: 40 },
+            { width: 20, height: 80 }
+        ];
+
+        function createCactus() {
+            const now = Date.now();
+            if (now - lastObstacleTime < minObstacleDistance) return;
+            
+            const type = cactusTypes[Math.floor(Math.random() * cactusTypes.length)];
+            const cactus = {
+                x: canvas.width,
+                y: dino.groundY + dino.height - type.height,
+                width: type.width,
+                height: type.height,
+                draw() {
+                    ctx.fillStyle = '#555';
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                },
+                update() {
+                    this.x -= gameSpeed;
+                }
+            };
+            cacti.push(cactus);
+            lastObstacleTime = now;
+        }
+
+        // Cloud variables
+        const clouds = [];
+
+        function createCloud() {
+            const cloud = {
+                x: canvas.width,
+                y: Math.random() * 100 + 20,
+                width: Math.random() * 50 + 50,
+                height: Math.random() * 30 + 20,
+                speed: Math.random() * 2 + 1,
+                draw() {
+                    ctx.fillStyle = '#ccc';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.width/2, 0, Math.PI * 2);
+                    ctx.arc(this.x + this.width/3, this.y - this.height/3, this.width/3, 0, Math.PI * 2);
+                    ctx.arc(this.x + this.width/1.5, this.y, this.width/3, 0, Math.PI * 2);
+                    ctx.fill();
+                },
+                update() {
+                    this.x -= this.speed;
+                }
+            };
+            clouds.push(cloud);
+        }
+
+        // Game functions
+        function checkCollision() {
+            for (const cactus of cacti) {
+                if (
+                    dino.x + dino.width > cactus.x &&
+                    dino.x < cactus.x + cactus.width &&
+                    dino.y + dino.height > cactus.y
+                ) {
+                    gameOver();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function increaseScore() {
+            const now = Date.now();
+            if (now - lastScoreIncreaseTime > 300) { // Chỉ tăng điểm mỗi 300ms khi nhảy
+                score++;
+                lastScoreIncreaseTime = now;
+                scoreDisplay.textContent = `Điểm: ${score}`;
+                
+                // Kiểm tra nếu đạt đủ điểm để mở game Flappy Bird
+                if (score === config.requiredScoreForFlappy) {
+                    setTimeout(() => {
+                        if (confirm(`Chúc mừng! Bạn đã đạt ${score} điểm. Mở game Flappy Bird?`)) {
+                            window.location.href = "/flappy";
+                        }
+                    }, 500);
+                }
+                
+                // Tăng độ khó theo điểm
+                if (score % config.speedIncreaseInterval === 0) {
+                    gameSpeed += 0.5;
+                    speedInput.value = gameSpeed;
+                    speedValue.textContent = gameSpeed;
+                }
+            }
+        }
+
+        function gameOver() {
+            isGameOver = true;
+            gameOverSound.play();
+            gameOverDisplay.style.display = 'block';
+            finalScoreDisplay.textContent = `Điểm: ${score}`;
+            
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('dinoHighScore', highScore);
+                finalScoreDisplay.textContent += ` (Kỷ lục mới!)`;
+            } else {
+                finalScoreDisplay.textContent += ` (Kỷ lục: ${highScore})`;
+            }
+            
+            cancelAnimationFrame(animationId);
+        }
+
+        function restartGame() {
+            score = 0;
+            gameSpeed = parseInt(speedInput.value);
+            minObstacleDistance = parseInt(distanceInput.value);
+            isGameOver = false;
+            cacti.length = 0;
+            clouds.length = 0;
+            dino.y = dino.groundY;
+            dino.isJumping = false;
+            gameOverDisplay.style.display = 'none';
+            scoreDisplay.textContent = `Điểm: ${score}`;
+            lastTime = 0;
+            lastObstacleTime = 0;
+            lastScoreIncreaseTime = 0;
+            
+            if (isPaused) {
+                togglePause();
+            }
+            
+            animationId = requestAnimationFrame(gameLoop);
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            document.getElementById('pauseBtn').textContent = isPaused ? '▶ Tiếp tục' : '⏸ Tạm dừng';
+            
+            if (!isPaused && !isGameOver) {
+                animationId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Game loop
+        function gameLoop(timestamp) {
+            if (isPaused || isGameOver) return;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Tạo chướng ngại vật ngẫu nhiên
+            if (Math.random() < 0.01) {
+                createCactus();
+            }
+            
+            // Tạo mây ngẫu nhiên
+            if (Math.random() < 0.005) {
+                createCloud();
+            }
+            
+            // Update và vẽ các đối tượng
+            dino.update();
+            dino.draw();
+            
+            for (let i = cacti.length - 1; i >= 0; i--) {
+                cacti[i].update();
+                cacti[i].draw();
+                
+                if (cacti[i].x + cacti[i].width < 0) {
+                    cacti.splice(i, 1);
+                }
+            }
+            
+            for (let i = clouds.length - 1; i >= 0; i--) {
+                clouds[i].update();
+                clouds[i].draw();
+                
+                if (clouds[i].x + clouds[i].width < 0) {
+                    clouds.splice(i, 1);
+                }
+            }
+            
+            // Kiểm tra va chạm
+            if (!checkCollision()) {
+                animationId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                dino.jump();
+            } else if (e.key === 'p' || e.key === 'P') {
+                togglePause();
+            } else if (e.key === 'r' || e.key === 'R') {
+                restartGame();
+            }
+        });
+
+        document.addEventListener('touchstart', () => {
+            dino.jump();
+        });
+
+        // Cập nhật giá trị khi thay đổi slider
+        speedInput.addEventListener('input', () => {
+            gameSpeed = parseInt(speedInput.value);
+            speedValue.textContent = gameSpeed;
+        });
+
+        distanceInput.addEventListener('input', () => {
+            minObstacleDistance = parseInt(distanceInput.value);
+            distanceValue.textContent = minObstacleDistance;
+        });
+
+        // Start game
+        restartGame();
+    </script>
+</body>
+</html>

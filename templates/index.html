@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Vòng quay may mắn</title>
+    <style>
+        body {
+            text-align: center;
+            font-family: sans-serif;
+            background: #f0f0f0;
+        }
+
+        .wheel-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        .pointer {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-bottom: 30px solid red;
+            z-index: 10;
+        }
+
+        canvas {
+            border: 5px solid #ffa500;
+            border-radius: 50%;
+        }
+
+        #spin {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #ffa500;
+            border: none;
+            color: white;
+            cursor: pointer;
+            border-radius: 10px;
+        }
+
+        .popup {
+            display: none;
+            position: fixed;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            border: 2px solid #ccc;
+            padding: 20px;
+            z-index: 1000;
+            max-width: 80%;
+        }
+
+            .popup img, .popup video {
+                max-width: 100%;
+                max-height: 80vh;
+            }
+    </style>
+</head>
+<body>
+    <h1>🎉 Vòng quay may mắn 🎉</h1>
+
+    <div class="wheel-container">
+        <div class="pointer"></div>
+        <canvas id="wheel" width="500" height="500"></canvas>
+    </div><br>
+
+    <button id="spin">QUAY!</button>
+
+    <div id="popup" class="popup">
+        <div id="reward-content"></div>
+        <button id="closeBtn" onclick="closePopup()">Đóng</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("wheel");
+        const ctx = canvas.getContext("2d");
+        const spinBtn = document.getElementById("spin");
+        
+        // Khởi tạo danh sách phần thưởng ban đầu
+        let rewards = ["🎁 Quà", "🍔 Voucher", "🎮 Game", "🎉 Bất ngờ"];
+        let colors = ["#FFB347", "#FDFD96", "#FF6961", "#84B6F4"];
+        
+        let sliceAngle = 2 * Math.PI / rewards.length;
+        let rotation = 0;
+        let isSpinning = false;
+        let currentSpeed = 0;
+        let targetRotation = 0;
+
+        function drawWheel() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Cập nhật lại góc cắt dựa trên số phần thưởng hiện tại
+            sliceAngle = 2 * Math.PI / rewards.length;
+            
+            for (let i = 0; i < rewards.length; i++) {
+                const angle = rotation + i * sliceAngle - Math.PI / 2;
+                ctx.beginPath();
+                ctx.moveTo(250, 250);
+                ctx.arc(250, 250, 240, angle, angle + sliceAngle);
+                ctx.fillStyle = colors[i % colors.length]; // Dùng modulo để tránh lỗi khi rewards > colors
+                ctx.fill();
+
+                ctx.save();
+                ctx.translate(250, 250);
+                ctx.rotate(angle + sliceAngle / 2);
+                ctx.fillStyle = "black";
+                ctx.font = "16px Arial";
+                ctx.fillText(rewards[i], 120, 0);
+                ctx.restore();
+            }
+        }
+
+        function animateSpin() {
+            if (!isSpinning) return;
+
+            const diff = (targetRotation - rotation + 2 * Math.PI) % (2 * Math.PI);
+            if (diff < 0.01) {
+                isSpinning = false;
+                rotation = targetRotation % (2 * Math.PI);
+                drawWheel();
+                showResult();
+                return;
+            }
+
+            currentSpeed *= 0.97;
+            if (currentSpeed < 0.01) currentSpeed = 0.01;
+            rotation += currentSpeed;
+            rotation %= 2 * Math.PI;
+
+            drawWheel();
+            requestAnimationFrame(animateSpin);
+        }
+
+        function startSpin() {
+            if (isSpinning || rewards.length === 0) return;
+
+            const prizeIndex = Math.floor(Math.random() * rewards.length);
+            const offset = Math.random() * sliceAngle;
+            targetRotation = (2 * Math.PI - (prizeIndex * sliceAngle + offset)) % (2 * Math.PI);
+            targetRotation += 2 * Math.PI * 5; // Quay thêm 5 vòng
+
+            currentSpeed = 0.4;
+            isSpinning = true;
+            animateSpin();
+        }
+
+        function showResult() {
+            const finalRotation = rotation % (2 * Math.PI);
+            const angleFromTop = (2 * Math.PI - finalRotation + sliceAngle / 2) % (2 * Math.PI);
+            const index = Math.floor(angleFromTop / sliceAngle);
+            const rewardBox = document.getElementById("reward-content");
+            const popup = document.getElementById("popup");
+            const closeBtn = document.getElementById("closeBtn");
+
+            rewardBox.innerHTML = "";
+            closeBtn.style.display = "inline-block"; // Default
+
+            // Hiển thị phần thưởng và xóa nó khỏi danh sách
+            const wonReward = rewards[index];
+            
+            switch (wonReward) {
+                case "🎁 Quà":
+                    rewardBox.innerHTML =  `<h3>🎂 Clip chúc mừng sinh nhật</h3>
+                                          <video id="birthday-video" src="/static/video/birthday.mp4" autoplay controls></video>
+                           `;
+                    break;
+                case "🍔 Voucher":
+                    rewardBox.innerHTML = `<h3>🍔 Bạn trúng Voucher !</h3><img src="/static/images/voucher.jpg">`;
+                    break;
+                case "🎮 Game":
+                    rewardBox.innerHTML = `
+                    <h3>🎮 Bạn phải chơi thắng thì mới nhận quà!</h3>
+                    <a href="/dino" target="_blank">👉 Bấm để chơi ngay</a>`;
+                    closeBtn.style.display = "none"; // Ẩn nút đóng
+                    break;
+                case "🎉 Bất ngờ":
+                    rewardBox.innerHTML = `<h3>🎉 Bạn nhận được phần thưởng bất ngờ!</h3>`;
+                    break;
+            }
+
+            // Xóa phần thưởng đã trúng khỏi danh sách
+            rewards.splice(index, 1);
+            colors.splice(index, 1);
+            
+            // Nếu không còn phần thưởng nào thì vô hiệu hóa nút quay
+            if (rewards.length === 0) {
+                spinBtn.disabled = true;
+                spinBtn.textContent = "Hết phần thưởng";
+            }
+            
+            popup.style.display = "block";
+            drawWheel(); // Vẽ lại vòng quay với phần thưởng mới
+        }
+
+        function closePopup() {
+            document.getElementById("popup").style.display = "none";
+        }
+
+        spinBtn.addEventListener("click", startSpin);
+        drawWheel();
+    </script>
+</body>
+</html>
